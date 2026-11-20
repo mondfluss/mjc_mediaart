@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>마녀의 마법 솥 - 블랙 스테이지</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;color:white;font-family:system-ui,'Malgun Gothic',sans-serif}canvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:#000}.buttons{position:fixed;z-index:2;bottom:max(24px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;gap:16px;justify-content:center;width:min(95%,760px)}button{cursor:pointer;touch-action:manipulation;border:1px solid #a66eff;background:linear-gradient(140deg,#351357,#160b29);color:#fff;font-size:clamp(15px,2.5vw,20px);font-weight:700;border-radius:100px;padding:16px 24px;flex:1;box-shadow:0 0 22px #8d38ff55, inset 0 0 15px #9d55ff22;transition:transform .15s,box-shadow .15s}button:hover{box-shadow:0 0 32px #a85aff99}button:active{transform:scale(.96)}#error{position:fixed;top:10px;left:10px;z-index:5;color:#ffb6b6;background:#300a13;padding:10px;border-radius:8px;display:none}
+#camera{flex:1.25;border-color:#43c5b7;background:linear-gradient(140deg,#123d3b,#071c1b)}#status{position:fixed;z-index:4;top:12px;left:50%;transform:translateX(-50%);font-size:12px;color:#d4c5e9;background:#170e25cc;border:1px solid #6a4a88;border-radius:14px;padding:8px 13px;max-width:94%;text-align:center;pointer-events:none}video{display:none}@media(max-width:540px){.buttons{gap:6px}button{padding:12px 6px;font-size:13px}}
+</style></head><body><canvas id="scene" aria-label="검정 배경 위에 마법 가루와 연기 애니메이션"></canvas><div class="buttons"><button id="powder">✦ 가루 투입</button><button id="smoke">☁ 연기 발생</button><button id="camera">◉ 카메라·마이크 켜기</button></div><div id="status">수동 체험 가능 · 박수는 마이크 권한 필요 · 손 인식은 인터넷 필요</div><video id="webcam" autoplay muted playsinline></video><div id="error" role="alert"></div>
+<script>
+(()=>{'use strict';
+const canvas=document.querySelector('#scene'),ctx=canvas.getContext('2d'),error=document.querySelector('#error');
+if(!ctx){error.style.display='block';error.textContent='Canvas 2D를 지원하지 않는 브라우저입니다.';return;}
+const palette=['#a743ff','#42ff8c','#26e6f0','#ffb132'];
+let W=0,H=0,dpr=1,particles=[],clouds=[],last=0,smokeUntil=0,smokeColor=palette[0],smokeRate=0,elapsed=0;
+const rand=(a,b)=>a+Math.random()*(b-a),pick=()=>palette[Math.floor(Math.random()*palette.length)];
+const rgba=(hex,a)=>{const v=parseInt(hex.slice(1),16);return `rgba(${v>>16},${v>>8&255},${v&255},${Math.max(0,Math.min(1,a))})`};
+// The cauldron mouth is centered at 50% width, 48% height of the screen.
+function pot(){return {x:W*.5,y:H*.48,r:Math.min(W*.14,H*.12)}}
+function resize(){W=innerWidth;H=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function addPowder(){const p=pot(),color=pick(),sx=rand(W*.22,W*.78),sy=H*.12;for(let i=0;i<190;i++){let t=rand(.6,1.5);particles.push({x:sx+rand(-55,55),y:sy+rand(-25,25),vx:(p.x-sx)/rand(60,95)+rand(-1.1,1.1),vy:rand(-1.5,1.5),gravity:rand(.07,.17),size:rand(.7,3.3),age:0,life:rand(65,135),color:Math.random()<.18?'#ffffff':color,twinkle:rand(0,7),kind:'powder'})}}
+function addSmoke(){smokeColor=pick();smokeUntil=performance.now()+6500;smokeRate+=125;spawnSmoke(220)}
+function spawnSmoke(n){const p=pot();for(let i=0;i<n;i++){const c=Math.random()<.26?pick():smokeColor;clouds.push({x:p.x+rand(-p.r*.62,p.r*.62),y:p.y+rand(-6,9),vx:rand(-1.35,1.35),vy:rand(-4.4,-1.7),radius:rand(10,30),age:rand(0,16),life:rand(100,210),phase:rand(0,Math.PI*2),color:c,alpha:rand(.20,.38)});}if(clouds.length>1800)clouds.splice(0,clouds.length-1800)}
+function spawnSparks(n){const p=pot();for(let i=0;i<n;i++)particles.push({x:p.x+rand(-p.r,p.r),y:p.y+rand(-7,7),vx:rand(-2.8,2.8),vy:rand(-5,-1),gravity:rand(-.025,.018),size:rand(.5,2.7),age:0,life:rand(45,100),color:pick(),twinkle:rand(0,7),kind:'spark'})}
+function frame(now){try{const dt=Math.min((now-last)/16.6667||1,2.2);last=now;elapsed+=dt;ctx.clearRect(0,0,W,H);ctx.globalCompositeOperation='screen';
+if(now<smokeUntil){smokeRate+=dt*10;const count=Math.min(32,Math.floor(smokeRate));smokeRate-=count;if(count)spawnSmoke(count);if(Math.random()<.65)spawnSparks(3)}
+for(let i=clouds.length-1;i>=0;i--){const s=clouds[i];s.age+=dt;s.x+=(s.vx+Math.sin(s.phase+s.age*.035)*1.45)*dt;s.y+=s.vy*dt;s.radius+=rand(.33,.57)*dt;const life=s.age/s.life;const fade=Math.sin(Math.PI*Math.min(1,life));const alpha=s.alpha*fade;const g=ctx.createRadialGradient(s.x,s.y,0,s.x,s.y,s.radius);g.addColorStop(0,rgba(s.color,alpha));g.addColorStop(.33,rgba(s.color,alpha*.83));g.addColorStop(.72,rgba(s.color,alpha*.29));g.addColorStop(1,rgba(s.color,0));ctx.fillStyle=g;ctx.beginPath();ctx.arc(s.x,s.y,s.radius,0,Math.PI*2);ctx.fill();if(s.age>=s.life||s.y< -s.radius*2)clouds.splice(i,1)}
+for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.age+=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.gravity*dt;const fade=Math.min(1,(p.life-p.age)/25);const twinkle=.65+.35*Math.sin(p.age*.35+p.twinkle);ctx.shadowBlur=p.kind==='powder'?17:12;ctx.shadowColor=p.color;ctx.fillStyle=rgba(p.color,fade*twinkle);ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();if(p.size>1.9&&Math.random()<.22){ctx.strokeStyle=rgba('#ffffff',fade*.7);ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(p.x-5,p.y);ctx.lineTo(p.x+5,p.y);ctx.moveTo(p.x,p.y-5);ctx.lineTo(p.x,p.y+5);ctx.stroke()}if(p.age>=p.life||p.y>H+30)particles.splice(i,1)}ctx.shadowBlur=0;ctx.globalCompositeOperation='source-over';requestAnimationFrame(frame)}catch(e){error.style.display='block';error.textContent='애니메이션 오류: '+e.message;requestAnimationFrame(frame)}}
+document.querySelector('#powder').addEventListener('click',addPowder);document.querySelector('#smoke').addEventListener('click',addSmoke);
+addEventListener('keydown',e=>{if(e.code==='Digit1')addPowder();if(e.code==='Digit2'||e.code==='Space'){e.preventDefault();addSmoke()}});
+// Camera: MediaPipe Hands (loaded on demand from CDN). Microphone: Web Audio clap detection.
+const cameraButton=document.querySelector('#camera'),status=document.querySelector('#status'),video=document.querySelector('#webcam');
+let stream=null,hands=null,audioContext=null,analyser=null,audioData=null,active=false,runToken=0;
+let lastHandTrigger=0,lastClap=0,noiseFloor=.008,previousEnergy=.008,clapArmed=true,calibrationUntil=0,clapFrames=0;
+function notice(message){status.textContent=message}
+function report(message){error.style.display='block';error.textContent=message;notice('인식 제한 · 수동 버튼은 계속 사용할 수 있습니다')}
+function loadHands(){return new Promise((resolve,reject)=>{if(window.Hands)return resolve();const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js';script.onload=()=>window.Hands?resolve():reject(new Error('손 인식 모델이 로드되지 않았습니다.'));script.onerror=()=>reject(new Error('손 인식 라이브러리 다운로드 실패. 인터넷 연결을 확인하세요.'));document.head.appendChild(script)})}
+function stopSensors(){active=false;runToken++;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}video.srcObject=null;if(hands){try{hands.close()}catch(e){}hands=null}if(audioContext){audioContext.close().catch(()=>{});audioContext=null}analyser=null;cameraButton.textContent='◉ 카메라·마이크 켜기';if(error.style.display!=='block')notice('인식 중지 · 가루 투입 / 연기 발생 버튼으로 체험 가능')}
+async function startSensors(){const token=++runToken;cameraButton.disabled=true;error.style.display='none';try{
+if(!navigator.mediaDevices?.getUserMedia)throw new Error('이 브라우저 또는 file:// 환경에서는 카메라·마이크 접근이 차단됩니다. Chrome의 localhost 또는 HTTPS에서 실행해 주세요.');
+notice('카메라·마이크 권한을 요청하는 중…');stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});if(token!==runToken)return;
+video.srcObject=stream;await video.play();
+const AC=window.AudioContext||window.webkitAudioContext;if(!AC)throw new Error('Web Audio API를 사용할 수 없습니다.');audioContext=new AC();await audioContext.resume();const source=audioContext.createMediaStreamSource(stream);analyser=audioContext.createAnalyser();analyser.fftSize=2048;analyser.smoothingTimeConstant=0;source.connect(analyser);audioData=new Float32Array(analyser.fftSize);
+// Start microphone detection independently, so a failed CDN hand model does not disable claps.
+active=true;calibrationUntil=performance.now()+1000;noiseFloor=.008;previousEnergy=.008;clapArmed=true;clapFrames=0;
+cameraButton.textContent='■ 카메라·마이크 끄기';
+notice('마이크 활성화 · 1초간 주변 소음 측정 후 박수를 쳐보세요');
+const audioLoop=()=>{if(!active||token!==runToken||!analyser)return;
+analyser.getFloatTimeDomainData(audioData);
+let sum=0,peak=0,diffSum=0,prev=audioData[0];
+for(let i=0;i<audioData.length;i++){const v=audioData[i];sum+=v*v;peak=Math.max(peak,Math.abs(v));const d=v-prev;diffSum+=d*d;prev=v;}
+const rms=Math.sqrt(sum/audioData.length),sharpness=Math.sqrt(diffSum/audioData.length),t=performance.now();
+// Fast, sharp transients are more reliable than a fixed high volume threshold.
+const threshold=Math.max(.018,noiseFloor*2.7);
+const sharp=sharpness>Math.max(.012,noiseFloor*.75);
+const onset=rms>Math.max(previousEnergy*1.35,noiseFloor*1.7);
+if(t>calibrationUntil&&clapArmed&&rms>threshold&&peak>.075&&sharp&&onset&&t-lastClap>850){
+lastClap=t;clapArmed=false;clapFrames=0;addSmoke();notice('👏 박수 소리 감지! 마법 연기 발생');
+}
+if(!clapArmed){clapFrames++;if((rms<threshold*.75&&clapFrames>5)||clapFrames>35)clapArmed=true;}
+// Update ambient level slowly, never allowing a clap to become the baseline.
+if(rms<Math.max(.055,noiseFloor*2.3))noiseFloor=noiseFloor*.985+Math.min(rms,.055)*.015;
+previousEnergy=previousEnergy*.65+rms*.35;
+requestAnimationFrame(audioLoop);
+};audioLoop();
+// Hand detection is optional; microphone continues even if the model cannot load.
+loadHands().then(()=>{if(!active||token!==runToken)return;
+hands=new window.Hands({locateFile:file=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'+file});
+hands.setOptions({maxNumHands:2,modelComplexity:0,minDetectionConfidence:.65,minTrackingConfidence:.55});
+hands.onResults(results=>{if(!active)return;const t=performance.now();if(results.multiHandLandmarks?.length&&t-lastHandTrigger>1700){lastHandTrigger=t;addPowder();notice('✋ 손 감지! 마법 가루 투입 · 박수 소리에 연기 발생')}});
+const visionLoop=async()=>{if(!active||token!==runToken)return;try{if(video.readyState>=2)await hands.send({image:video})}catch(e){notice('손 인식 오류 · 마이크 박수 인식은 계속 작동합니다');return}if(active)setTimeout(visionLoop,85)};
+visionLoop();notice('인식 중 · 손을 보여주거나 박수를 쳐보세요');
+}).catch(e=>{if(active){notice('손 인식 모델 연결 실패 · 박수 인식은 계속 작동합니다');error.style.display='block';error.textContent='손 인식만 제한됨: '+e.message;}});
+}catch(e){report('카메라/마이크 시작 실패: '+e.message);stopSensors()}finally{cameraButton.disabled=false}}
+cameraButton.addEventListener('click',()=>active||stream?stopSensors():startSensors());
+addEventListener('pagehide',stopSensors);
+requestAnimationFrame(frame);
+})();
+</script></body></html>
