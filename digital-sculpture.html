@@ -1,0 +1,74 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>형태를 바꾸는 디지털 조각</title><style>
+*{box-sizing:border-box}body{margin:0;background:#020308;color:#edf4ff;font:15px system-ui}canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none}header{position:fixed;top:clamp(14px,4vw,48px);left:clamp(14px,4vw,48px);pointer-events:none}h1{font-size:clamp(24px,4vw,48px);margin:0;letter-spacing:-.05em}p{margin:.45em 0;color:#a8b8d1}.panel{position:fixed;bottom:clamp(12px,4vw,36px);left:50%;transform:translateX(-50%);width:max-content;max-width:94vw;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding:12px 16px;background:#101729ef;border:1px solid #364b72;border-radius:16px}button,label,select{font:inherit;color:inherit}button,select,.upload{background:#192849;border:1px solid #4a6697;border-radius:8px;padding:7px 10px;cursor:pointer}label{display:inline-flex;align-items:center;gap:8px}input[type=range]{width:105px;accent-color:#7daaff}#error{position:fixed;bottom:105px;left:4%;max-width:92%;background:#451e36;color:#fff;padding:12px;border-radius:8px}
+</style></head><body><canvas aria-label="형태를 바꾸는 디지털 조각"></canvas><header><h1>형태를 바꾸는 디지털 조각</h1><p>포인터로 회전하고 클릭해 형태를 바꾸세요.</p></header><div class="panel"><button id="shape">구</button><label>회전 속도 <input id="spin" type="range" min="0" max="100" value="36"></label><label>변형 강도 <input id="warp" type="range" min="0" max="100" value="36"></label></div><div id="error" role="alert" hidden></div><script>
+'use strict';
+const $=id=>document.getElementById(id);
+const canvas=document.querySelector('canvas');
+function fail(message){$('error').textContent=message;$('error').hidden=false;}
+window.addEventListener('error',event=>fail(event.message));
+const ctx=canvas.getContext('2d',{alpha:false});
+if(!ctx) throw new Error('Canvas 2D를 시작할 수 없습니다.');
+let w,h,dpr;
+function resize(){w=canvas.clientWidth;h=canvas.clientHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.max(1,Math.round(w*dpr));canvas.height=Math.max(1,Math.round(h*dpr));ctx.setTransform(dpr,0,0,dpr,0,0);}
+resize();addEventListener('resize',resize);
+const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
+const tau=Math.PI*2;
+const pointer={x:0,y:0,active:false};
+canvas.addEventListener('pointermove',e=>Object.assign(pointer,{x:e.clientX,y:e.clientY,active:true}));
+canvas.addEventListener('pointerleave',()=>pointer.active=false);
+function clear(color='#020308'){ctx.fillStyle=color;ctx.fillRect(0,0,w,h);}
+
+const shapes=['구','큐브','토러스'];
+const rings=25,segments=48;
+let mode=0,time=0,yaw=0,tilt=.28,offset=0;
+function change(){mode=(mode+1)%3;$('shape').textContent=shapes[mode];}
+canvas.onclick=change;$('shape').onclick=change;
+const points=[];
+const edges=[];
+for(let row=0;row<rings;row++)for(let col=0;col<segments;col++){
+  const u=col/segments*tau,v=row/(rings-1)*Math.PI;
+  points.push({u,v});const i=row*segments+col;
+  edges.push([i,row*segments+(col+1)%segments]);
+  if(row<rings-1)edges.push([i,i+segments]);
+}
+function project(p,radius,amount){
+  const {u,v}=p;
+  let x=Math.sin(v)*Math.cos(u),y=Math.cos(v),z=Math.sin(v)*Math.sin(u);
+  if(mode===1){const m=Math.max(Math.abs(x),Math.abs(y),Math.abs(z));x*=.77/m;y*=.77/m;z*=.77/m;}
+  if(mode===2){const a=.71+.31*Math.cos(2*v);x=a*Math.cos(u);z=a*Math.sin(u);y=.31*Math.sin(2*v);}
+  const wobble=1+amount*.28*Math.sin(u*5+time*.85)*Math.sin(v*6-time*.7);
+  x*=wobble;y*=wobble;z*=wobble;
+  const angle=yaw+offset;
+  const xx=x*Math.cos(angle)-z*Math.sin(angle),zz=x*Math.sin(angle)+z*Math.cos(angle);
+  const yy=y*Math.cos(tilt)-zz*Math.sin(tilt),depth=y*Math.sin(tilt)+zz*Math.cos(tilt);
+  const scale=radius*3.9/(3.9-depth);
+  return [w/2+xx*scale,h/2+yy*scale,depth];
+}
+function render(dt){
+  time+=dt;yaw+=dt*Number($('spin').value)*.016;
+  offset+=((pointer.active?(pointer.x/w-.5)*3:0)-offset)*.065;
+  tilt+=((pointer.active?(pointer.y/h-.5)*2:.28)-tilt)*.065;
+  clear('#020209');
+  const radius=Math.min(w,h)*.31;
+  const halo=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,radius*1.75);
+  halo.addColorStop(0,'#161438');halo.addColorStop(1,'#020209');ctx.fillStyle=halo;ctx.fillRect(0,0,w,h);
+  const verts=points.map(p=>project(p,radius,Number($('warp').value)/100));
+  for(let bin=0;bin<9;bin++){
+    ctx.beginPath();
+    for(const [a,b] of edges){
+      const p=verts[a],q=verts[b];
+      if(clamp(Math.floor(((p[2]+q[2])/2+1.45)*3),0,8)!==bin)continue;
+      ctx.moveTo(p[0],p[1]);ctx.lineTo(q[0],q[1]);
+    }
+    ctx.lineWidth=.65+bin*.12;
+    ctx.strokeStyle='hsla('+(266-bin*7)+' 100% 72% / '+(.09+bin*.065)+')';ctx.stroke();
+  }
+  ctx.fillStyle='#caeaff';ctx.shadowColor='#736cff';ctx.shadowBlur=10;
+  for(let i=0;i<verts.length;i+=11){const [x,y,z]=verts[i];if(z<0)continue;ctx.beginPath();ctx.arc(x,y,1+z,0,tau);ctx.fill();}
+  ctx.shadowBlur=0;
+}
+
+let last;
+function frame(time){const dt=last===undefined?1/60:Math.min((time-last)/1000,.05);last=time;render(dt);requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>
